@@ -10,10 +10,11 @@ library(readr)
 library(ggrepel)
 library(igraph)
 library(readxl)
- conflicts_prefer(tidygraph::select)
+conflicts_prefer(tidygraph::select)
+conflicts_prefer(dplyr::count)
+library(reshape2)
+library(ggplot2)
 ```
-
-
 
 
 ```{r}
@@ -38,30 +39,73 @@ immune_cells <- c('B cell',
 
 
 
-
 ```{r}
 immune_cells_neutro <- c('B cell','Macrophage', 'Monocyte', 'NK',
  'T cell CD4',
  'T cell CD8',
- 'T cell regulatory','Cancer cell')
+ 'T cell regulatory','Cancer cell', 'Neutrophil')
 ```
 
+## #  How many cell-cell interactions are there between neutrophils and other cell types? 
+ 
+```{r}
+tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
+  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type, pvalue) |>
+  mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
+  mutate(cluster_1 = 'Neutrophil') |>
+  mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) |>
+  filter(cluster_2 %in% c(immune_cells_neutro))
+
+
+unique_rows <- tumor_normal_interactions[!duplicated(tumor_normal_interactions$variable), ]
+
+```
+
+```{r} 
+results <- data.frame(cell_type = character(), number_of_interactions = integer(), stringsAsFactors = FALSE)
+
+
+# Loop through each cell type in immune_cells_neutro
+for (i in immune_cells_neutro) {
+  tumor_normal_interactions <- primary_tumor_patient_stratification_tumor_cells %>%
+    filter(cell_type == i) %>%
+    mutate(
+      group = ifelse(log2FoldChange < 0, "Tumor", "Normal"),
+      cluster_1 = 'Neutrophil',
+      variable = sprintf("%s_%s_%s_%s", source_genesymbol, target_genesymbol, cluster_1, cell_type),
+      coef = log2FoldChange
+    )
+  unique_rows <- tumor_normal_interactions[!duplicated(tumor_normal_interactions$variable), ]
+  number_rows <- nrow(unique_rows)
+  
+  # Append results to the data frame
+  results <- rbind(results, data.frame(cell_type = i, number_of_interactions = number_rows, stringsAsFactors = FALSE))
+}
+
+results <- results %>%
+  rename(source = cell_type,
+         neutrophil = number_of_interactions)
+```
 ## How many cell-cell interactions are in total?
 
 ```{r}
-
-conflicts_prefer(dplyr::count)
-library(reshape2)
-library(ggplot2)
-
 tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  filter(target %in% c(immune_cells_neutro))
+  filter(target %in% c(immune_cells_neutro)) |>   mutate(variable=sprintf("%s_%s_%s_%s", source_genesymbol, target_genesymbol, source, target))
 
 unique_sources <- unique(tumor_normal_interactions$target)
+
+unique_rows <- tumor_normal_interactions[!duplicated(tumor_normal_interactions$variable), ]
+
 interaction_matrix <- expand.grid(source = unique_sources, target = unique_sources) %>%
-  left_join(tumor_normal_interactions %>% count(source, target), by = c("source", "target")) %>%
+  left_join(unique_rows %>% count(source, target), by = c("source", "target")) %>%
   replace_na(list(n = 0)) %>%
   spread(key = target, value = n, fill = 0)
+
+merged_df <- interaction_matrix %>%
+  left_join(results, by = "source")
+
+names(merged_df)[names(merged_df) == "neutrophil"] <- "Neutrophil"
+
 
 melted_cormat <- melt(interaction_matrix)
 
@@ -88,65 +132,17 @@ ggsave("all_cells_heatmap_plot.pdf", plot = p, device = "pdf", width = 8, height
  
  
 ```{r}
-tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type, pvalue) |>
-  mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
-  mutate(cluster_1 = 'Neutrophil') |>
-  mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) |>
-  filter(cluster_2 %in% c(immune_cells_neutro))
+
+####
+# Convert the numeric dataframe to a matrix
+rownames(merged_df) <- merged_df$source
+merged_df$source <- NULL
+numeric_matrix <- as.matrix(merged_df)
+
+# Sum all the numbers in the matrix
+total_sum <- sum(numeric_matrix, na.rm = TRUE)
+####
 ```
-
-
-## #  How many cell-cell interactions are there between neutrophils and other cell types? 
-```{r} 
-results <- data.frame(cell_type = character(), number_of_interactions = integer(), stringsAsFactors = FALSE)
-
-# Loop through each cell type in immune_cells_neutro
-for (i in immune_cells_neutro) {
-  tumor_normal_interactions <- primary_tumor_patient_stratification_tumor_cells %>%
-    filter(cell_type == i) %>%
-    mutate(
-      group = ifelse(log2FoldChange < 0, "Tumor", "Normal"),
-      cluster_1 = 'Neutrophil',
-      variable = sprintf("%s_%s_%s_%s", source_genesymbol, target_genesymbol, cluster_1, cell_type),
-      coef = log2FoldChange
-    )
-  
-  number_rows <- nrow(tumor_normal_interactions)
-  
-  # Append results to the data frame
-  results <- rbind(results, data.frame(cell_type = i, number_of_interactions = number_rows, stringsAsFactors = FALSE))
-}
-```
-
-
-```{r}
-
-results <- results %>%
-  rename(source = cell_type,
-         neutrophil = number_of_interactions)
-
-melted_cormat <- melt(results)
-
-# Create the heatmap with labels and renamed axes
-p <- ggplot(data = melted_cormat, aes(x = source, y = variable, fill = value)) + 
-  geom_tile() +
-  geom_text(aes(label = value), color = "black", size = 4) +  # Add numeric labels
-  scale_fill_gradient(low = "white", high = "red") +  # Change color scale to reds
-  labs(x = "Source", y = "Target", fill = "N.Interactions") + 
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),   theme_minimal(base_family = "Arial") +  # Clean theme with Arial font
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # Adjust x-axis text
-        axis.text.y = element_text(size = 12),  # Adjust y-axis text
-        axis.title = element_text(size = 14, face = "bold"),  # Adjust axis titles
-        legend.title = element_text(size = 14),  # Adjust legend title
-        legend.text = element_text(size = 12),  # Adjust legend text
-        plot.title = element_text(size = 16, hjust = 0.5, face = "bold"))  # Adjust plot title
-)  # Rotate x-axis labels
-
-p
-ggsave("neutro_heatmap_plot.pdf", plot = p, device = "pdf", width = 8, height =2)
-```
- 
 
 
 
