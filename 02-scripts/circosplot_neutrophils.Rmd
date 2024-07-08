@@ -43,7 +43,7 @@ immune_cells <- c('B cell',
 immune_cells_neutro <- c('B cell','Macrophage', 'Monocyte', 'NK',
  'T cell CD4',
  'T cell CD8',
- 'T cell regulatory','Cancer cell', 'Neutrophil')
+ 'T cell regulatory','Cancer cell')
 ```
 
 ## #  How many cell-cell interactions are there between neutrophils and other cell types? 
