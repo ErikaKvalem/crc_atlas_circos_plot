@@ -18,39 +18,46 @@ library(ggplot2)
 
 
 ```{r}
-primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/projects/2022/CRCA/results/v0.1/crc-atlas-dataset/latest/ds_analyses/liana_cell2cell/neutrophil_subclusters/tumor_blood/neutrophil.csv", row.names=1)
+primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/neutrophil/tumor_blood/neutrophil.csv", row.names=1)
 ```
 
 ```{r}
-immune_cells <- c('B cell',
- 'DC mature',
- 'Macrophage',
- 'Mast cell',
- 'Monocyte',
- 'NK',
- 'Neutrophil',
- 'Plasma cell',
- 'T cell CD4',
- 'T cell CD8',
- 'T cell regulatory',
- 'cDC',
- 'pDC','Cancer cell')
+immune_cells <- c(
+'B cell',
+"Dendritic cell",
+'Epithelial progenitor',
+'Epithelial cell',
+'Fibroblast',
+'Goblet',
+'Endothelial',
+'Tuft','Pericyte',
+'Macrophage',
+'Mast cell',
+'Monocyte',
+'NK',
+'Neutrophil',
+'Plasma cell',
+'CD4',
+'CD8',
+'Treg',
+'Cancer cell'
+ )
 ```
 
 
 
 ```{r}
-immune_cells_neutro <- c('B cell','Macrophage', 'Monocyte', 'NK',
- 'T cell CD4',
- 'T cell CD8',
- 'T cell regulatory','Cancer cell')
+immune_cells_neutro <- c('B cell','Macrophage', 'Monocyte', 'NK','Plasma cell',"Dendritic cell",'Mast cell',"Neutrophil",
+ 'CD4', "Epithelial cell","Fibroblast",
+ 'CD8',
+ 'Treg','Cancer cell')
 ```
 
 ## #  How many cell-cell interactions are there between neutrophils and other cell types? 
  
 ```{r}
 tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type, pvalue) |>
+  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type_middle, pvalue) |>
   mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
   mutate(cluster_1 = 'Neutrophil') |>
   mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) |>
@@ -61,6 +68,7 @@ unique_rows <- tumor_normal_interactions[!duplicated(tumor_normal_interactions$v
 
 ```
 
+
 ```{r} 
 results <- data.frame(cell_type = character(), number_of_interactions = integer(), stringsAsFactors = FALSE)
 
@@ -68,31 +76,31 @@ results <- data.frame(cell_type = character(), number_of_interactions = integer(
 # Loop through each cell type in immune_cells_neutro
 for (i in immune_cells_neutro) {
   tumor_normal_interactions <- primary_tumor_patient_stratification_tumor_cells %>%
-    filter(cell_type == i) %>%
+    filter(cell_type_middle == i) %>%
     mutate(
       group = ifelse(log2FoldChange < 0, "Tumor", "Normal"),
       cluster_1 = 'Neutrophil',
-      variable = sprintf("%s_%s_%s_%s", source_genesymbol, target_genesymbol, cluster_1, cell_type),
+      variable = sprintf("%s_%s_%s_%s", source_genesymbol, target_genesymbol, cluster_1, cell_type_middle),
       coef = log2FoldChange
     )
   unique_rows <- tumor_normal_interactions[!duplicated(tumor_normal_interactions$variable), ]
   number_rows <- nrow(unique_rows)
   
   # Append results to the data frame
-  results <- rbind(results, data.frame(cell_type = i, number_of_interactions = number_rows, stringsAsFactors = FALSE))
+  results <- rbind(results, data.frame(cell_type_middle = i, number_of_interactions = number_rows, stringsAsFactors = FALSE))
 }
 
 results <- results %>%
-  rename(source = cell_type,
+  rename(source = cell_type_middle,
          neutrophil = number_of_interactions)
 ```
 ## How many cell-cell interactions are in total?
 
 ```{r}
 tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  filter(target %in% c(immune_cells_neutro)) |>   mutate(variable=sprintf("%s_%s_%s_%s", source_genesymbol, target_genesymbol, source, target))
+  filter(cell_type_middle %in% c(immune_cells_neutro)) |>   mutate(variable=sprintf("%s_%s_%s_%s", source_genesymbol, target_genesymbol, source, target))
 
-unique_sources <- unique(tumor_normal_interactions$target)
+unique_sources <- unique(tumor_normal_interactions$cell_type_middle)
 
 unique_rows <- tumor_normal_interactions[!duplicated(tumor_normal_interactions$variable), ]
 
@@ -101,13 +109,14 @@ interaction_matrix <- expand.grid(source = unique_sources, target = unique_sourc
   replace_na(list(n = 0)) %>%
   spread(key = target, value = n, fill = 0)
 
+
 merged_df <- interaction_matrix %>%
   left_join(results, by = "source")
 
 names(merged_df)[names(merged_df) == "neutrophil"] <- "Neutrophil"
 
 
-melted_cormat <- melt(interaction_matrix)
+melted_cormat <- melt(merged_df)
 
 # Create the heatmap with labels and renamed axes
 p <- ggplot(data = melted_cormat, aes(x = source, y = variable, fill = value)) + 
@@ -158,18 +167,20 @@ top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> ar
 ```{r}
 COLORS = list(cell_type=list(
         "B cell"="#1f77b4",
-        "Macrophage"="#d62728",
+        "Macrophage"="#17becf",
         "Mast cell"="#aa40fc",
         "NK"="#8c564b",
-        "Neutrophil"="#e377c2",
+        "Neutrophil"="#d62728",
         "Plasma cell"="#b5bd61",
-        "Monocyte"="#17becf",
-        "T cell CD4"="#aec7e8",
-        "T cell CD8"="#ff7f0e",
-        "T cell regulatory"="#ff4f0e",
-        "cDC"="#ffbb78",
-        "pDC"="#98df8a",
-        "Cancer cell"="#999999"
+        "Monocyte"="#ff7f0e",
+        "CD4"="#aec7e8",
+        "CD8"="#e377c2",
+        "Treg"="#ff4f0e",
+        "Dendritic cell"="#ffbb78",
+        "Pericyte"="#98df8a",
+        "Cancer cell"="#999999",
+        "Fibroblast" = "#2ca02c",
+         "Epithelial cell" = "#d62769"
 ))
 ```
 

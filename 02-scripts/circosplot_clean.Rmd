@@ -13,21 +13,9 @@ library(readxl)
  conflicts_prefer(tidygraph::select)
 ```
 
-
-
-
 ```{r}
-#primary_tumor_patient_stratification_tumor_cells <- #read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/core_atlas/tumor_normal/epithelial_cancer/epithelial_cancer.csv", row.names=1)
-primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/neutrophil/TAN1_blood/neutrophil.csv", row.names=1)
+primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/core_atlas/tumor_normal/epithelial_cancer/epithelial_cancer.csv", row.names=1)
 ```
-
-
-
-
-```{r}
-#primary_tumor_patient_stratification_tumor_cells <- na.omit(primary_tumor_patient_stratification_tumor_cells)
-```
-
 
 ```{r}
 immune_cells <- c(
@@ -52,77 +40,36 @@ immune_cells <- c(
  )
 ```
 
-
-
-
-```{r}
-immune_cells_neutro <- c('B cell','Macrophage', 'Monocyte', 'NK','Plasma cell',"Dendritic cell",'Mast cell',"Neutrophil",
- 'CD4', "Epithelial cell","Fibroblast", "Endothelial cell" ,
- 'CD8',
- 'Treg','Cancer cell')
-```
-
-```{r}
-immune_cells_blood<- c('B cell','BN1', 'BN2', 'BN3', 'CD4', 'CD8','Cancer cell ciruclating',"Dendritic cell","Eosinophil",'Macrophage','Monocyte', "Platelet",'Treg',"TAN1")
-```
-
-
-
-
 ```{r}
 tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type_sub, pvalue) |>
-  mutate(group = if_else(log2_fc < 0, "Tumor", "Blood")) |>
-  mutate(cluster_1 = "TAN1") |>
+  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=target, pvalue) |>
+  mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
+  mutate(cluster_1 = "Cancer cell") |>
   mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) |> 
- filter(cluster_2 %in% c(immune_cells_blood))
+ filter(cluster_2 %in% c(immune_cells))
 ```
 
 ```{r}
 top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> arrange(fdr) |> pull(source) |> head(10)
 ```
 
-
-
-
-
-```{r}
-#COLORS = list(cell_type=list(
-#        "B cell"="#1f77b4",
-#        "Macrophage"="#17becf",
-#        "Mast cell"="#aa40fc",
-#        "NK"="#8c564b",
-#        "Neutrophil"="#d62728",
-#        "Plasma cell"="#b5bd61",
-#        "Monocyte"="#ff7f0e",
-#        "CD4"="#aec7e8",
-#        "CD8"="#e377c2",
-#        "Treg"="#ff4f0e",
-#        "Dendritic cell"="#ffbb78",
-#        "Pericyte"="#98df8a",
-#        "Cancer cell"="#999999",
-#        "Fibroblast" = "#2ca02c",
-#         "Endothelial cell" = "#d62769"
-#))
-```
-
 ```{r}
 COLORS = list(cell_type=list(
         "B cell"="#1f77b4",
         "Macrophage"="#17becf",
-        "Monocyte"="#aa40fc",
-        "Platelet"="#8c564b",
-        "BN1"="#d62728",
-        "BN2"="#b5bd61",
-        "BN3"="#ff7f0e",
+        "Mast cell"="#aa40fc",
+        "NK"="#8c564b",
+        "Neutrophil"="#d62728",
+        "Plasma cell"="#b5bd61",
+        "Monocyte"="#ff7f0e",
         "CD4"="#aec7e8",
         "CD8"="#e377c2",
         "Treg"="#ff4f0e",
         "Dendritic cell"="#ffbb78",
-        "Cancer cell circulating"="#98df8a",
-        "Dendritic cell"="#999999",
-        "Eosinophil" = "#2ca02c",
-         "TAN1" = "#d62769"
+        "Pericyte"="#98df8a",
+        "Cancer cell"="#999999",
+        "Fibroblast" = "#2ca02c",
+         "Endothelial cell" = "#d62769"
 ))
 ```
 
@@ -147,7 +94,6 @@ edge_color="log2_fc"
 ```{r}
 cell_type_color_scale=COLORS$cell_type
 ```
-
 
 
 ```{r}
@@ -178,12 +124,14 @@ nodes = bind_rows(nodes_source, nodes_target) |>
 
 ```
 
+
 ```{r}
 
 cell_types = unique(c(cpdb_res$cluster_1, cpdb_res$cluster_2))
 cell_type_lr = unique(paste0(nodes$cell_type, "_", nodes$type))
 
 ```
+
 
 ```{r}
 # construct hierarchy graph for dendrogram
@@ -194,8 +142,6 @@ edges_ct_hierarchy = bind_rows(
   nodes |> mutate(from=paste0(cell_type, "_", type), to=name) |> select(from, to)
   )
 ```
-
-
 
 
 ```{r}
@@ -216,16 +162,13 @@ G_ct =graph_from_data_frame(edges_ct_hierarchy, directed=TRUE, vertices=nodes_ct
 nodes_ct_hierarchy <- nodes_ct_hierarchy[!is.na(nodes_ct_hierarchy$cell_type), ]
 ```
 
-
-
 ```{r}
-# info for geom_conn_bundle
+
 from = match(edges$from, nodes_ct_hierarchy$name)
 to = match(edges$to, nodes_ct_hierarchy$name)
 conn_meta = data.frame(from=nodes_ct_hierarchy[from,]$name, to=nodes_ct_hierarchy[to,]$name) |>
   left_join(edges, by=c("from", "to"))
 
-#conn_meta$log2_fc <- scale(conn_meta$log2_fc)
 ```
 
 ```{r}
@@ -234,13 +177,11 @@ edge_color_scale=scale_edge_color_gradientn(colors=pals::coolwarm(100), limits=c
 ```
 
 ```{r}
-#edge_color_scale <- scale_edge_color_gradientn(
-#  colors = pals::coolwarm(100),
-# limits = c(-25, 10),   values = scales::rescale(c(-25, 0, 10), to = c(0, 1)) 
-#)
-
+edge_color_scale <- scale_edge_color_gradientn(
+  colors = pals::coolwarm(100),
+ limits = c(-25, 10),   values = scales::rescale(c(-25, 0, 10), to = c(0, 1)) 
+)
 ```
-
 
 ```{r}
 # plot using ggraph
@@ -265,42 +206,9 @@ p = ggraph(G_ct, layout="dendrogram", circular=TRUE) +
   scale_size_continuous(range=c(2, 14)) +
  theme(legend.position="bottom",legend.margin = margin(t = 1.5, unit = "cm"),legend.key.size = unit(0.8, "cm"), plot.margin = margin(2, 3, 3, 3, "cm"),
         plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5)) +  # Center align the title
-  ggtitle("Crosstalk of TAN1 neutrophil with major immune cells in blood. TAN1 vs blood. Top 10 DEG. MUI Innsbruck")
+  ggtitle("Crosstalk of TAN2 neutrophil with major immune cells in blood. TAN2 vs blood. Top 10 DEG. MUI Innsbruck")
 
 p
 
-
-
-ggsave("circos_plot_core_atlas_tumor_blood_neutro_TAN1.pdf", plot = p, width = 55, height = 45, units = "cm")
+ggsave("circos_plot_core_atlas_tumor_blood_neutro.pdf", plot = p, width = 55, height = 45, units = "cm")
 ```
-
-```{r}
-library(ggraph)
-library(ggplot2)
-library(ggrepel)
-
-p = ggraph(G_ct, layout="dendrogram", circular=TRUE) +
-  geom_node_point(aes(color=cell_type, shape=type, size=fraction_expressed), stroke=2, fill="white") +
-  geom_conn_bundle(
-    data = get_con(from=from, to=to, coef=conn_meta$coef, log2_fc=conn_meta$log2_fc, pvalue=conn_meta$pvalue, group=conn_meta$group, fdr=conn_meta$fdr),
-    aes_string(color=edge_color, width="abs(log10(fdr))"),
-    tension=0.4,
-    arrow=arrow()) +
-  scale_edge_color_gradient2(midpoint = 0, low = "blue", mid = "white", high = "red", limits = c(-5, 5)) +  # Set color limits
-  scale_edge_width_continuous(range=c(0.5,2)) +
-  theme_void() +
-  geom_text_repel(aes(x=x, y=y, label=gene), size=7 ) +
-  geom_label_repel(aes(x=x, y=y, nudge_x=1.2*x, nudge_y=1.3*y, label=cell_type_label), xlim=c(-2, 2), size=10, force=3, alpha=.8) +
-  coord_fixed(clip="off") +
-  scale_shape_manual(values=c("receptor"=19, "ligand"=21))  +
-  scale_color_manual(values=cell_type_color_scale)   +
-  scale_size_continuous(range=c(2, 14)) +
-  theme(legend.position="bottom",
-        legend.margin = margin(t = 1.5, unit = "cm"),
-        legend.key.size = unit(0.8, "cm"),
-        plot.margin = margin(2, 3, 3, 3, "cm"),
-        plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5)) +
-  ggtitle("Crosstalk of Cancer cell with major immune cells in tumor vs normal. Top 10 DEG in Cancer cell")
-
-```
-
