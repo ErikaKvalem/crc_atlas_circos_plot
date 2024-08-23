@@ -18,15 +18,10 @@ library(readxl)
 
 ```{r}
 #primary_tumor_patient_stratification_tumor_cells <- #read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/core_atlas/tumor_normal/epithelial_cancer/epithelial_cancer.csv", row.names=1)
-primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/neutrophil/TAN2_blood/neutrophil.csv", row.names=1)
+primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/epithelial_cancer_old_atlas.csv", row.names=1)
 ```
 
 
-
-
-```{r}
-#primary_tumor_patient_stratification_tumor_cells <- na.omit(primary_tumor_patient_stratification_tumor_cells)
-```
 
 
 ```{r}
@@ -63,19 +58,25 @@ immune_cells_neutro <- c('B cell','Macrophage', 'Monocyte', 'NK','Plasma cell',"
 ```
 
 ```{r}
-immune_cells_blood<- c('B cell','BN1', 'BN2', 'BN3', 'CD4', 'CD8','Cancer cell ciruclating',"Dendritic cell","Eosinophil",'Macrophage','Monocyte', "Platelet",'Treg',"TAN2")
+immune_cells_blood<- c('B cell','CD4', 'CD8','Cancer cell ciruclating',"Dendritic cell","Eosinophil",'Macrophage','Monocyte', "Platelet",'Treg',"TAN4")
 ```
 
+```{r}
+immune_cells_blood <- list(unique(primary_tumor_patient_stratification_tumor_cells$source))
+```
 
+```{r}
+immune_cells = list(unique(primary_tumor_patient_stratification_tumor_cells$cell_type))
+```
 
 
 ```{r}
 tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type_sub, pvalue) |>
-  mutate(group = if_else(log2_fc < 0, "Tumor", "Blood")) |>
-  mutate(cluster_1 = "TAN2") |>
-  mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) |> 
- filter(cluster_2 %in% c(immune_cells_blood))
+  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type, pvalue) |>
+  mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
+  mutate(cluster_1 = "Cancer cell"   ) |>
+  mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc)# |> 
+# filter(cluster_2 %in% c(immune_cells))
 ```
 
 ```{r}
@@ -87,23 +88,23 @@ top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> ar
 
 
 ```{r}
-#COLORS = list(cell_type=list(
-#        "B cell"="#1f77b4",
-#        "Macrophage"="#17becf",
-#        "Mast cell"="#aa40fc",
-#        "NK"="#8c564b",
-#        "Neutrophil"="#d62728",
-#        "Plasma cell"="#b5bd61",
-#        "Monocyte"="#ff7f0e",
-#        "CD4"="#aec7e8",
-#        "CD8"="#e377c2",
-#        "Treg"="#ff4f0e",
-#        "Dendritic cell"="#ffbb78",
-#        "Pericyte"="#98df8a",
-#        "Cancer cell"="#999999",
-#        "Fibroblast" = "#2ca02c",
-#         "Endothelial cell" = "#d62769"
-#))
+COLORS = list(cell_type=list(
+        "B cell"="#1f77b4",
+        "Macrophage"="#17becf",
+        "Mast cell"="#aa40fc",
+        "NK"="#8c564b",
+        "Neutrophil"="#d62728",
+        "Plasma cell"="#b5bd61",
+        "Monocyte"="#ff7f0e",
+        "CD4"="#aec7e8",
+        "CD8"="#e377c2",
+        "Treg"="#ff4f0e",
+        "Dendritic cell"="#ffbb78",
+        "Pericyte"="#98df8a",
+        "Cancer cell"="#999999",
+        "Fibroblast" = "#2ca02c",
+         "Endothelial cell" = "#d62769"
+))
 ```
 
 ```{r}
@@ -122,7 +123,7 @@ COLORS = list(cell_type=list(
         "Cancer cell circulating"="#98df8a",
         "Dendritic cell"="#999999",
         "Eosinophil" = "#2ca02c",
-         "TAN2" = "#d62769"
+         "TAN3" = "#d62769"
 ))
 ```
 
@@ -230,14 +231,14 @@ conn_meta = data.frame(from=nodes_ct_hierarchy[from,]$name, to=nodes_ct_hierarch
 
 ```{r}
 
-edge_color_scale=scale_edge_color_gradientn(colors=pals::coolwarm(100), limits=c(-1,1) * max(abs(conn_meta[[edge_color]])))
+edge_color_scale=scale_edge_color_gradientn(colors=pals::coolwarm(100), limits=c(-1.5,1.5) * max(abs(conn_meta[[edge_color]])))
 ```
 
 ```{r}
-#edge_color_scale <- scale_edge_color_gradientn(
-#  colors = pals::coolwarm(100),
-# limits = c(-25, 10),   values = scales::rescale(c(-25, 0, 10), to = c(0, 1)) 
-#)
+edge_color_scale <- scale_edge_color_gradientn(
+  colors = pals::coolwarm(100),
+ limits = c(-3,3),   values = scales::rescale(c(-3, 0, 3), to = c(0, 1)) 
+)
 
 ```
 
@@ -265,13 +266,13 @@ p = ggraph(G_ct, layout="dendrogram", circular=TRUE) +
   scale_size_continuous(range=c(2, 14)) +
  theme(legend.position="bottom",legend.margin = margin(t = 1.5, unit = "cm"),legend.key.size = unit(0.8, "cm"), plot.margin = margin(2, 3, 3, 3, "cm"),
         plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5)) +  # Center align the title
-  ggtitle("Crosstalk of TAN2 neutrophil with major immune cells in blood. TAN2 vs blood. Top 10 DEG. MUI Innsbruck")
+  ggtitle("Crosstalk of TAN4 neutrophil with major immune cells in blood. TAN4 vs blood. Top 10 DEG. MUI Innsbruck")
 
 p
 
 
 
-ggsave("circos_plot_core_atlas_tumor_blood_neutro_TAN2.pdf", plot = p, width = 55, height = 45, units = "cm")
+ggsave("circos_plot_core_atlas_old.pdf", plot = p, width = 55, height = 45, units = "cm")
 ```
 
 ```{r}
