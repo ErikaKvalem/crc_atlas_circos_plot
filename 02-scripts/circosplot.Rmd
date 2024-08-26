@@ -17,10 +17,15 @@ library(readxl)
 
 
 ```{r}
-#primary_tumor_patient_stratification_tumor_cells <- #read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/core_atlas/tumor_normal/epithelial_cancer/epithelial_cancer.csv", row.names=1)
-primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/epithelial_cancer_old_atlas.csv", row.names=1)
+#primary_tumor_patient_stratification_tumor_cells <- #read.csv("/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/core_atlas/tumor_normal/epithelial_cancer/epithelial#_cancer.csv", row.names=1)
+primary_tumor_patient_stratification_tumor_cells <- read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/final_cpdb.csv", row.names=1)
 ```
 
+
+```{r}
+library(data.table)
+primary_tumor_patient_stratification_tumor_cells <- fread("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/final_cpdb.csv")
+```
 
 
 
@@ -69,18 +74,42 @@ immune_cells_blood <- list(unique(primary_tumor_patient_stratification_tumor_cel
 immune_cells = list(unique(primary_tumor_patient_stratification_tumor_cells$cell_type))
 ```
 
+```{r}
+immune_cells = c("Cancer cell",  "Macrophage", "Endothelial","Monocyte","Neutrophil", "NK","T cell CD4" ,"T cell regulatory", "B cell","T cell CD8","cDC","pDC")   
+```
+
+```{r}
+immune_cells = c('B cell activated',
+ 'B cell memory',
+ 'B cell naive',
+ 'CD4',
+ 'CD4 cycling',
+ 'CD8',
+ 'CD8 cycling',
+ 'DC mature',
+ 'DC3',
+ 'Epithelial',
+ 'GC B cell',
+ 'Goblet',
+ 'ILC',
+ 'Macrophage',
+ 'Macrophage cycling',
+ 'Mast cell',
+ 'Monocyte',
+ 'NK')   
+```
 
 ```{r}
 tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type, pvalue) |>
+  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type_fine_x, pvalue) |>
   mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
   mutate(cluster_1 = "Cancer cell"   ) |>
-  mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc)# |> 
+  mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) #|> 
 # filter(cluster_2 %in% c(immune_cells))
 ```
 
 ```{r}
-top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> arrange(fdr) |> pull(source) |> head(10)
+top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> arrange(fdr) |> pull(source) |> head(5)
 ```
 
 
@@ -90,20 +119,22 @@ top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> ar
 ```{r}
 COLORS = list(cell_type=list(
         "B cell"="#1f77b4",
-        "Macrophage"="#17becf",
         "Mast cell"="#aa40fc",
+        "pDC"="#ffbb78",
+        "cDC"="#9467bd",
+        "T cell CD4"="#CCEABF",
+        "Macrophage"="#17becf",
         "NK"="#8c564b",
         "Neutrophil"="#d62728",
         "Plasma cell"="#b5bd61",
         "Monocyte"="#ff7f0e",
         "CD4"="#aec7e8",
-        "CD8"="#e377c2",
-        "Treg"="#ff4f0e",
-        "Dendritic cell"="#ffbb78",
+        "T cell CD8"="#e377c2",
+        "T cell regulatory"="#ff4f0e",
         "Pericyte"="#98df8a",
         "Cancer cell"="#999999",
         "Fibroblast" = "#2ca02c",
-         "Endothelial cell" = "#d62769"
+         "Endothelial" = "#d62769"
 ))
 ```
 
@@ -132,9 +163,7 @@ COLORS = list(cell_type=list(
 cpdb_res<- tumor_normal_interactions
 ```
 
-```{r}
-cpdb_res <- na.omit(cpdb_res)
-```
+
 
 
 ```{r}
@@ -160,7 +189,6 @@ mutate(log2_fc = if_else(is.infinite(log2_fc) & log2_fc < 0, -max(abs(log2_fc[is
 mutate(log2_fc = if_else(is.infinite(log2_fc) & log2_fc > 0, max(abs(log2_fc[is.finite(log2_fc)])), log2_fc)) |>
 mutate(fdr = if_else(fdr == 0, 1e-255, fdr))
 ```
-
 
 ```{r}
 # make nodes df
@@ -231,13 +259,18 @@ conn_meta = data.frame(from=nodes_ct_hierarchy[from,]$name, to=nodes_ct_hierarch
 
 ```{r}
 
-edge_color_scale=scale_edge_color_gradientn(colors=pals::coolwarm(100), limits=c(-1.5,1.5) * max(abs(conn_meta[[edge_color]])))
+edge_color_scale=scale_edge_color_gradientn(colors=pals::coolwarm(100) , oob = scales::squish , limits=c(-1,1) * max(abs(conn_meta[[edge_color]])))
 ```
+
+
+
 
 ```{r}
 edge_color_scale <- scale_edge_color_gradientn(
-  colors = pals::coolwarm(100),
- limits = c(-3,3),   values = scales::rescale(c(-3, 0, 3), to = c(0, 1)) 
+ colors = pals::coolwarm(100),
+  limits = c(-5, 5),
+ values = scales::rescale(c(-5, 0, 5), to = c(0, 1)),
+oob = scales::squish  # Clamps values outside the limits to the nearest limit
 )
 
 ```
@@ -258,21 +291,21 @@ p = ggraph(G_ct, layout="dendrogram", circular=TRUE) +
   scale_edge_width_continuous(range=c(0.5,2)) +
   theme_void() +
   geom_text_repel(aes(x=x, y=y, label=gene), size=5 , fontface="italic") +
-  geom_label_repel(aes(x=x, y=y, nudge_x=1.2*x, nudge_y=1.3*y, label=cell_type_label), xlim=c(-2, 2), size=8, force=3, alpha=.8) +
+  geom_label_repel(aes(x=x, y=y, nudge_x=1.2*x, nudge_y=1.3*y, label=cell_type_label), xlim=c(-2, 2), size=7, force=3, alpha=.8) +
   coord_fixed(clip="off") +
   scale_shape_manual(values=c("receptor"=19, "ligand"=21),na.translate = FALSE )  +
   
   scale_color_manual(values=cell_type_color_scale, na.translate = FALSE)   +
   scale_size_continuous(range=c(2, 14)) +
  theme(legend.position="bottom",legend.margin = margin(t = 1.5, unit = "cm"),legend.key.size = unit(0.8, "cm"), plot.margin = margin(2, 3, 3, 3, "cm"),
-        plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5)) +  # Center align the title
-  ggtitle("Crosstalk of TAN4 neutrophil with major immune cells in blood. TAN4 vs blood. Top 10 DEG. MUI Innsbruck")
+        plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5)) #+  # Center align the title
+ # ggtitle("Crosstalk of TAN4 neutrophil with major immune cells in blood. TAN4 vs blood. Top 10 DEG. MUI Innsbruck")
 
 p
 
 
 
-ggsave("circos_plot_core_atlas_old.pdf", plot = p, width = 55, height = 45, units = "cm")
+ggsave("circos_plot_core_atlas_new_last.pdf", plot = p, width = 55, height = 45, units = "cm")
 ```
 
 ```{r}
@@ -303,5 +336,13 @@ p = ggraph(G_ct, layout="dendrogram", circular=TRUE) +
         plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5)) +
   ggtitle("Crosstalk of Cancer cell with major immune cells in tumor vs normal. Top 10 DEG in Cancer cell")
 
+```
+
+
+```{r}
+ggplot(conn_meta, aes(x=log2_fc)) + geom_histogram()
+# Change the width of bins
+ggplot(conn_meta, aes(x=log2_fc)) + 
+  geom_histogram(binwidth=1)
 ```
 
