@@ -1,0 +1,307 @@
+```{r}
+library(conflicted)
+library(pals)
+library(ggplot2)
+library(ggraph)
+library(dplyr)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("rename", "dplyr")
+library(readr)
+library(ggrepel)
+library(igraph)
+library(readxl)
+library(data.table)
+ conflicts_prefer(tidygraph::select)
+```
+
+```{r}
+path="/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/h5ads/"
+```
+
+```{r}
+primary_tumor_patient_stratification_tumor_cells <- read.csv(paste0(path,"epithelial_cancer_updated.csv"), row.names=1)
+liana_res = read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/final_scripts/002_analysis/liana_res.csv")
+#For loading big files
+#primary_tumor_patient_stratification_tumor_cells <- fread(paste0(path,"epithelial_cancer.csv")
+```
+
+```{r}
+immune_cells = c('B cell activated',
+ 'B cell memory',
+ 'B cell naive',
+ 'CD4',
+ 'CD4 cycling',
+ 'CD8',
+ 'CD8 cycling',
+ 'DC mature',
+ 'DC3',
+ 'Epithelial',
+ 'GC B cell',
+ 'Goblet',
+ 'ILC',
+ 'Macrophage',
+ 'Macrophage cycling',
+ 'Mast cell',
+ 'Monocyte',
+ 'NK')   
+```
+
+```{r}
+tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
+  select(source=source_genesymbol, target=target_genesymbol, interaction_expr, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type_fine, pvalue) |>
+  mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
+  mutate(cluster_1 = "Cancer cell") |>
+  mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) 
+```
+
+
+```{r}
+top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> arrange(fdr) |> pull(source) |> head(5)
+```
+
+```{r}
+COLORS = list(cell_type=list(
+        "B cell"="#1f77b4",
+        "Mast cell"="#aa40fc",
+        "pDC"="#ffbb78",
+        "cDC"="#9467bd",
+        "T cell CD4"="#CCEABF",
+        "Macrophage"="#17becf",
+        "NK"="#8c564b",
+        "Neutrophil"="#d62728",
+        "Plasma cell"="#b5bd61",
+        "Monocyte"="#ff7f0e",
+        "CD4"="#aec7e8",
+        "T cell CD8"="#e377c2",
+        "T cell regulatory"="#ff4f0e",
+        "Pericyte"="#98df8a",
+        "Cancer cell"="#999999",
+        "Fibroblast" = "#2ca02c",
+         "Endothelial" = "#d62769"
+))
+```
+
+```{r}
+cpdb_res<- tumor_normal_interactions
+```
+
+```{r}
+cpdb_res <- cpdb_res |> filter(source %in% top_genes)
+```
+
+```{r}
+edge_color="log2_fc"
+```
+
+```{r}
+cell_type_color_scale=COLORS$cell_type
+```
+
+```{r}
+# make edges df
+edges = cpdb_res |>
+mutate( from=sprintf("%s_%s_ligand", cluster_1, source), to=sprintf("%s_%s_receptor", cluster_2, target)) |>
+select(from, to, name="variable", coef, pvalue, fdr, group, log2_fc) |>
+mutate(log2_fc = if_else(is.infinite(log2_fc) & log2_fc < 0, -max(abs(log2_fc[is.finite(log2_fc)])), log2_fc)) |>
+mutate(log2_fc = if_else(is.infinite(log2_fc) & log2_fc > 0, max(abs(log2_fc[is.finite(log2_fc)])), log2_fc)) |>
+mutate(fdr = if_else(fdr == 0, 1e-255, fdr))
+```
+
+```{r}
+# make nodes df
+nodes_source = cpdb_res |>
+  select(cell_type=cluster_1, gene=source) |>
+  mutate(type="ligand", fraction_expressed=0.5) |>
+  mutate(name=sprintf("%s_%s_%s", cell_type, gene, type))
+nodes_target = cpdb_res |>
+  select(cell_type=cluster_2, gene=target, fraction_expressed) |>
+  mutate(type="receptor") |>
+  mutate(name=sprintf("%s_%s_%s", cell_type, gene, type))
+nodes = bind_rows(nodes_source, nodes_target) |>
+  distinct() |>
+  select(name, cell_type, gene, type, fraction_expressed) |>
+  filter(name %in% edges$to | name %in% edges$from)
+
+```
+
+```{r}
+
+cell_types = unique(c(cpdb_res$cluster_1, cpdb_res$cluster_2))
+cell_type_lr = unique(paste0(nodes$cell_type, "_", nodes$type))
+
+```
+
+```{r}
+# construct hierarchy graph for dendrogram
+edges_ct_hierarchy = bind_rows(
+  # root
+  data.frame(from="root", to=nodes$cell_type),
+  nodes |> mutate(to=paste0(cell_type, "_", type)) |> select(from=cell_type, to) |> distinct(),
+  nodes |> mutate(from=paste0(cell_type, "_", type), to=name) |> select(from, to)
+  )
+```
+
+```{r}
+
+nodes_ct_hierarchy = data.frame(name=unique(c(edges_ct_hierarchy$to, edges_ct_hierarchy$from))) |>
+  left_join(nodes, by="name") |> group_by(cell_type) |>  group_modify(function(x, key) {
+    n = nrow(x)
+    n1 = floor(n/2)
+    n2 = n - 1 - n1
+    x$cell_type_label = c(rep(NA, n1), key$cell_type, rep(NA, n2))
+    x
+  }) |> ungroup() |> select(name, cell_type, gene, type, cell_type_label, fraction_expressed)
+
+G_ct =graph_from_data_frame(edges_ct_hierarchy, directed=TRUE, vertices=nodes_ct_hierarchy)
+```
+
+```{r}
+nodes_ct_hierarchy <- nodes_ct_hierarchy[!is.na(nodes_ct_hierarchy$cell_type), ]
+```
+
+```{r}
+# info for geom_conn_bundle
+from = match(edges$from, nodes_ct_hierarchy$name)
+to = match(edges$to, nodes_ct_hierarchy$name)
+conn_meta = data.frame(from=nodes_ct_hierarchy[from,]$name, to=nodes_ct_hierarchy[to,]$name) |>
+  left_join(edges, by=c("from", "to"))
+
+#conn_meta$log2_fc <- scale(conn_meta$log2_fc)
+```
+
+```{r}
+
+
+edge_color_scale=scale_edge_color_gradientn(colors=pals::coolwarm(100) , oob = scales::squish , limits=c(-1,1) * max(abs(conn_meta[[edge_color]])))
+
+
+
+```
+
+```{r}
+
+
+p = ggraph(G_ct, layout="dendrogram", circular=TRUE) +
+  geom_node_point(aes(color=cell_type, shape=type, size=fraction_expressed), stroke=2, fill="white") +
+  geom_conn_bundle(
+    data = get_con(from=from, to=to, coef=conn_meta$coef, log2_fc=conn_meta$log2_fc, pvalue=conn_meta$pvalue, group=conn_meta$group, fdr=conn_meta$fdr),
+    # aes_string(color=edge_color, width="abs(coef)"),
+    aes_string(color=edge_color, width="abs(log10(fdr))"),
+    tension=0.4,
+    arrow=arrow()) +
+  edge_color_scale +
+  scale_edge_width_continuous(range=c(0.5,2)) +
+  theme_void() +
+  geom_text_repel(aes(x=x, y=y, label=gene), size=5 , fontface="italic") +
+  geom_label_repel(aes(x=x, y=y, nudge_x=1.2*x, nudge_y=1.3*y, label=cell_type_label), xlim=c(-2, 2), size=7, force=3, alpha=.8) +
+  coord_fixed(clip="off") +
+  scale_shape_manual(values=c("receptor"=19, "ligand"=21),na.translate = FALSE )  +
+  
+  scale_color_manual(values=cell_type_color_scale, na.translate = FALSE)   +
+  scale_size_continuous(range=c(2, 14)) +
+ theme(legend.position="bottom",legend.margin = margin(t = 1.5, unit = "cm"),legend.key.size = unit(0.8, "cm"), plot.margin = margin(2, 3, 3, 3, "cm"),
+        plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5))
+p
+```
+
+```{r}
+# Check distribution of the interactions
+ggplot(conn_meta, aes(x=log2_fc)) + geom_histogram()
+# Change the width of bins
+ggplot(conn_meta, aes(x=log2_fc)) + 
+  geom_histogram(binwidth=1)
+```
+
+
+```{r}
+liana_res = read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/final_scripts/002_analysis/liana_res.csv")
+dea_df = read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/final_scripts/002_analysis/combined_DESeq2_results.tsv", sep="\t")
+
+dea_df_ss <- dea_df[, c("symbol", "cell_type", "log2FoldChange")]
+colnames(dea_df_ss)[colnames(dea_df_ss) == "log2FoldChange"] <- "mean_exp"
+colnames(dea_df_ss)[colnames(dea_df_ss) == "symbol"] <- "gene"
+
+# Assuming your dataframe is named 'df'
+liana_res_ss <- liana_res[, c("source", "target", "ligand", "receptor", "interaction_stat")]
+colnames(liana_res_ss)[colnames(liana_res_ss) == "interaction_stat"] <- "score"
+conflicts_prefer(dplyr::filter)
+cell_types_immuno = c("B cell activated","B cell memory","B cell naive","CD4","CD4 cycling","CD8","CD8 cycling","Cancer BEST4","DC3", "DC mature")
+# Assuming your dataframe is 'df' and your list is 'cell_types_immuno'
+liana_res_ss <- liana_res_ss %>%
+  filter(source %in% cell_types_immuno & target %in% cell_types_immuno)
+toy_exp
+
+library(CCPlotR)
+data(toy_data, toy_exp, package = 'CCPlotR')
+cc_heatmap(toy_data)
+heatmap_plot <- cc_heatmap(liana_res_ss) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  )
+heatmap_plot
+
+cc_heatmap(toy_data, option = 'B', n_top_ints = 10)
+cc_heatmap(liana_res_ss, option = 'B', n_top_ints = 30)
+cc_heatmap(liana_res_ss, option = 'CellPhoneDB', n_top_ints = 30)
+
+
+
+cc_dotplot(liana_res_ss, option = 'B', n_top_ints = 10)
+cc_dotplot(liana_res_ss, option = 'Liana', n_top_ints = 15)
+
+cc_network(liana_res_ss)
+cc_network(liana_res_ss, option = 'B')
+
+cc_circos(liana_res_ss)
+cc_circos(liana_res_ss, option = 'B', n_top_ints = 10)
+cc_circos(liana_res_ss, option = 'C', n_top_ints = 20, exp_df = dea_df_ss,  palette = 'PuRd')
+
+cc_arrow(liana_res_ss, cell_types = c('Cancer BEST4', 'DC3'), colours = c('Cancer BEST4' = 'hotpink', 'DC3' = 'orange'))
+cc_arrow(liana_res_ss, cell_types = c('CD4', 'CD8'), option = 'B', exp_df = dea_df_ss, n_top_ints = 10, palette = 'OrRd')
+```
+
+
+
+```{r}
+#edge_color_scale <- scale_edge_color_gradientn(
+ #colors = pals::coolwarm(100),
+#  limits = c(-5, 5),
+# values = scales::rescale(c(-5, 0, 5), to = c(0, 1)),
+#oob = scales::squish  # Clamps values outside the limits to the nearest limit
+#)
+
+```
+
+
+```{r}
+p = ggraph(G_ct, layout="dendrogram", circular=TRUE) +
+  geom_node_point(aes(color=cell_type, shape=type, size=fraction_expressed), stroke=2, fill="white") +
+  geom_conn_bundle(
+    data = get_con(from=from, to=to, coef=conn_meta$coef, log2_fc=conn_meta$log2_fc, pvalue=conn_meta$pvalue, group=conn_meta$group, fdr=conn_meta$fdr),
+    # aes_string(color=edge_color, width="abs(coef)"),
+    aes_string(color=edge_color, width="abs(log10(fdr))"),
+    tension=0.4,
+    arrow=arrow()) +
+  edge_color_scale +
+  scale_edge_width_continuous(range=c(0.5,2)) +
+  theme_void() +
+  geom_text_repel(aes(x=x, y=y, label=gene), size=5 , fontface="italic") +
+  geom_label_repel(aes(x=x, y=y, nudge_x=1.2*x, nudge_y=1.3*y, label=cell_type_label), xlim=c(-2, 2), size=7, force=3, alpha=.8) +
+  coord_fixed(clip="off") +
+  scale_shape_manual(values=c("receptor"=19, "ligand"=21),na.translate = FALSE )  +
+  
+  scale_color_manual(values=cell_type_color_scale, na.translate = FALSE)   +
+  scale_size_continuous(range=c(2, 14)) +
+ theme(legend.position="bottom",legend.margin = margin(t = 1.5, unit = "cm"),legend.key.size = unit(0.8, "cm"), plot.margin = margin(2, 3, 3, 3, "cm"),
+        plot.title = element_text(size = 20, margin = margin(b = 1, unit = "cm"), hjust = 0.5))
+p
+
+ggsave(paste0(path,"circos_plot.pdf"), plot = p, width = 55, height = 45, units = "cm")
+```
+
+
+
+
+
+
+
