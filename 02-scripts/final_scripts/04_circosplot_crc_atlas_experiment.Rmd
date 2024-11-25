@@ -19,8 +19,8 @@ path="/data/projects/2022/CRCA/results/v1/final/liana_cell2cell/h5ads/"
 ```
 
 ```{r}
-primary_tumor_patient_stratification_tumor_cells <- read.csv(paste0(path,"epithelial_cancer_updated.csv"), row.names=1)
-liana_res = read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/final_scripts/002_analysis/liana_res.csv")
+#primary_tumor_patient_stratification_tumor_cells <- read.csv(paste0(path,"epithelial_cancer_updated.csv"), row.names=1)
+liana_res = read.csv("/data/scratch/kvalem/projects/2022/crc_atlas_circos_plot/02-scripts/final_scripts/002_analysis/res_df_ss_lastest_25nov_grouped_subset.csv")
 #For loading big files
 #primary_tumor_patient_stratification_tumor_cells <- fread(paste0(path,"epithelial_cancer.csv")
 ```
@@ -47,8 +47,8 @@ immune_cells = c('B cell activated',
 ```
 
 ```{r}
-tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
-  select(source=source_genesymbol, target=target_genesymbol, interaction_expr, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type_fine, pvalue) |>
+tumor_normal_interactions = liana_res|>
+  select(source=source_genesymbol, target=target_genesymbol, fraction_expressed, fdr=fdr, log2_fc=log2FoldChange, cluster_2=cell_type_fine, pvalue) |>
   mutate(group = if_else(log2_fc < 0, "Tumor", "Normal")) |>
   mutate(cluster_1 = "Cancer cell") |>
   mutate(variable=sprintf("%s_%s_%s_%s", source, target, cluster_1, cluster_2), coef=log2_fc) 
@@ -56,24 +56,24 @@ tumor_normal_interactions = primary_tumor_patient_stratification_tumor_cells|>
 
 
 ```{r}
-top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> arrange(fdr) |> pull(source) |> head(5)
+top_genes = tumor_normal_interactions |> select(source, fdr) |> distinct() |> arrange(fdr) |> pull(source) |> head(10)
 ```
 
 ```{r}
 COLORS = list(cell_type=list(
         "B cell"="#1f77b4",
         "Mast cell"="#aa40fc",
-        "pDC"="#ffbb78",
-        "cDC"="#9467bd",
-        "T cell CD4"="#CCEABF",
+        "DC"="#ffbb78",
+        "Colonocyte"="#9467bd",
+        "Eosinophil"="#CCEABF",
         "Macrophage"="#17becf",
         "NK"="#8c564b",
         "Neutrophil"="#d62728",
-        "Plasma cell"="#b5bd61",
+        "Plasma"="#b5bd61",
         "Monocyte"="#ff7f0e",
         "CD4"="#aec7e8",
-        "T cell CD8"="#e377c2",
-        "T cell regulatory"="#ff4f0e",
+        "CD8"="#e377c2",
+        "Treg"="#ff4f0e",
         "Pericyte"="#98df8a",
         "Cancer cell"="#999999",
         "Fibroblast" = "#2ca02c",
@@ -88,6 +88,12 @@ cpdb_res<- tumor_normal_interactions
 ```{r}
 cpdb_res <- cpdb_res |> filter(source %in% top_genes)
 ```
+
+```{r}
+cpdb_res <- cpdb_res[!duplicated(cpdb_res$variable), ]
+```
+
+
 
 ```{r}
 edge_color="log2_fc"
